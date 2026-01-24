@@ -1,5 +1,6 @@
 package fiveavian.proxvc.vc;
 
+import fiveavian.proxvc.util.Waveforms;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.openal.AL10;
 import org.lwjgl.openal.AL11;
@@ -30,6 +31,13 @@ public class StreamingAudioSource implements AutoCloseable {
     }
 
     public boolean queueSamples(ByteBuffer samples) {
+        // Update waveform points from the incoming audio samples
+        if (samples != null) {
+            samples.mark();
+            lastWaveformPoints = Waveforms.getWaveformPoints(samples, 20);
+            samples.reset();
+        }
+        
         int numBuffersToUnqueue = AL10.alGetSourcei(source, AL10.AL_BUFFERS_PROCESSED);
         numBuffersAvailable += numBuffersToUnqueue;
         for (int i = 0; i < numBuffersToUnqueue; i++) {

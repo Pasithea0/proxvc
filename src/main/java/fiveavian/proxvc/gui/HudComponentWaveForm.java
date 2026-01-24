@@ -29,6 +29,9 @@ public class HudComponentWaveForm extends HudComponentMovable {
 
     @Override
     public boolean isVisible(Minecraft minecraft) {
+        if (showWaveform == null) {
+            return false;
+        }
         return minecraft.gameSettings.immersiveMode.drawOverlays() && showWaveform.value;
     }
 

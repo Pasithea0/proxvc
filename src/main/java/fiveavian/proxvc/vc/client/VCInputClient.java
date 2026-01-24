@@ -3,6 +3,7 @@ package fiveavian.proxvc.vc.client;
 import fiveavian.proxvc.ProxVCClient;
 import fiveavian.proxvc.util.BufferAES;
 import fiveavian.proxvc.util.DatagramPacketWrapper;
+import fiveavian.proxvc.util.Waveforms;
 import fiveavian.proxvc.vc.AudioInputDevice;
 import fiveavian.proxvc.vc.StreamingAudioSource;
 import fiveavian.proxvc.vc.VCProtocol;
@@ -53,10 +54,21 @@ public class VCInputClient implements Runnable {
     }
 
     private void sendNextPacket() throws Exception {
-        if (sources.isEmpty() || client.thePlayer == null) {
+        ByteBuffer samples = device.pollSamples();
+        
+        // Update waveform points for HUD display (always update, even when not connected)
+        if (samples != null) {
+            samples.mark();
+            int[] waveformPoints = Waveforms.getWaveformPoints(samples, 20);
+            device.points = waveformPoints;
+            samples.reset();
+        }
+        
+        // Only send packets when connected to a server
+        if (vcClient.serverAddress == null || client.thePlayer == null) {
             return;
         }
-        ByteBuffer samples = device.pollSamples();
+        
         packet.buffer.rewind();
         packet.buffer.putInt(client.thePlayer.id);
         if (vcClient.isMuted.value || (vcClient.usePushToTalk.value && !vcClient.keyPushToTalk.isPressed()) || samples == null) {

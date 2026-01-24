@@ -1,6 +1,10 @@
 package fiveavian.proxvc;
 
 import fiveavian.proxvc.api.ClientEvents;
+import fiveavian.proxvc.gui.EnumOptionComponent;
+import fiveavian.proxvc.gui.HudComponentRegistry;
+import fiveavian.proxvc.gui.HudComponentStatus;
+import fiveavian.proxvc.gui.HudComponentWaveForm;
 import fiveavian.proxvc.gui.MicrophoneListComponent;
 import fiveavian.proxvc.util.OptionStore;
 import fiveavian.proxvc.vc.AudioInputDevice;
@@ -10,6 +14,7 @@ import fiveavian.proxvc.vc.client.VCOutputClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.options.ScreenOptions;
 import net.minecraft.client.gui.options.components.*;
 import net.minecraft.client.gui.options.data.OptionsPage;
 import net.minecraft.client.gui.options.data.OptionsPages;
@@ -51,15 +56,22 @@ public class ProxVCClient implements ClientModInitializer {
 
     public final KeyBinding keyMute = new KeyBinding("key.mute").setDefault(InputDevice.keyboard, Keyboard.KEY_M);
     public final KeyBinding keyPushToTalk = new KeyBinding("key.push_to_talk").setDefault(InputDevice.keyboard, Keyboard.KEY_V);
-    public final KeyBinding[] keyBindings = {keyMute, keyPushToTalk};
+    public final KeyBinding keyOpenMenu = new KeyBinding("key.open_menu").setDefault(InputDevice.keyboard, Keyboard.KEY_N);
+    public final KeyBinding[] keyBindings = {keyMute, keyPushToTalk, keyOpenMenu};
     public OptionFloat voiceChatVolume;
     public OptionBoolean isMuted;
     public OptionBoolean usePushToTalk;
     public OptionString selectedInputDevice;
     public OptionEnum<fiveavian.proxvc.util.Waveforms.types> waveformType;
+    public OptionBoolean showWaveform;
+    public OptionBoolean showMicStatus;
+    public OptionFloat muffleIntensity;
+    public OptionEnum<fiveavian.proxvc.vc.AttenuationProfile> attenuationProfile;
     public Option<?>[] options;
     public Path optionFilePath;
+    public OptionsPage proxvcOptionsPage;
     private boolean isMutePressed = false;
+    private boolean isOpenMenuPressed = false;
 
     public boolean isDisconnected() {
         return !client.isMultiplayerWorld() || serverAddress == null;
@@ -84,7 +96,11 @@ public class ProxVCClient implements ClientModInitializer {
         usePushToTalk = new OptionBoolean(client.gameSettings, "use_push_to_talk", false);
         selectedInputDevice = new OptionString(client.gameSettings, "selected_input_device", null);
         waveformType = new OptionEnum<>(client.gameSettings, "waveform_type", fiveavian.proxvc.util.Waveforms.types.class, fiveavian.proxvc.util.Waveforms.types.BASIC);
-        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice, waveformType};
+        showWaveform = new OptionBoolean(client.gameSettings, "show_waveform", true);
+        showMicStatus = new OptionBoolean(client.gameSettings, "show_mic_status", true);
+        muffleIntensity = new OptionFloat(client.gameSettings, "muffle_intensity", 1.0f);
+        attenuationProfile = new OptionEnum<>(client.gameSettings, "attenuation_profile", fiveavian.proxvc.vc.AttenuationProfile.class, fiveavian.proxvc.vc.AttenuationProfile.VOICE_CLARITY);
+        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice, waveformType, showWaveform, showMicStatus, muffleIntensity, attenuationProfile};
         optionFilePath = FabricLoader.getInstance().getConfigDir().resolve("proxvc_client.properties");
         OptionStore.loadOptions(optionFilePath, options, keyBindings);
         OptionStore.saveOptions(optionFilePath, options, keyBindings);
@@ -105,12 +121,39 @@ public class ProxVCClient implements ClientModInitializer {
                     .withComponent(new MicrophoneListComponent(device, selectedInputDevice));
             OptionsCategory controlsCategory = new OptionsCategory("gui.options.page.proxvc.category.controls")
                     .withComponent(new KeyBindingComponent(keyMute))
-                    .withComponent(new KeyBindingComponent(keyPushToTalk));
-            OptionsPages.register(new OptionsPage("gui.options.page.proxvc.title", Blocks.NOTEBLOCK.getDefaultStack()))
+                    .withComponent(new KeyBindingComponent(keyPushToTalk))
+                    .withComponent(new KeyBindingComponent(keyOpenMenu));
+            OptionsCategory effectsCategory = new OptionsCategory("gui.options.page.proxvc.category.effects")
+                    .withComponent(new FloatOptionComponent(muffleIntensity))
+                    .withComponent(new EnumOptionComponent<>(attenuationProfile));
+            OptionsCategory hudCategory = new OptionsCategory("gui.options.page.proxvc.category.hud")
+                    .withComponent(new EnumOptionComponent<>(waveformType))
+                    .withComponent(new BooleanOptionComponent(showWaveform))
+                    .withComponent(new BooleanOptionComponent(showMicStatus));
+            proxvcOptionsPage = new OptionsPage("gui.options.page.proxvc.title", Blocks.NOTEBLOCK.getDefaultStack())
                     .withComponent(generalCategory)
                     .withComponent(devicesCategory)
-                    .withComponent(controlsCategory);
+                    .withComponent(controlsCategory)
+                    .withComponent(effectsCategory)
+                    .withComponent(hudCategory);
+            OptionsPages.register(proxvcOptionsPage);
+            // Open audio input device (auto-select first available if none selected)
+            if (selectedInputDevice.value == null || selectedInputDevice.value.isEmpty()) {
+                String[] devices = AudioInputDevice.getSpecifiers();
+                if (devices.length > 0) {
+                    selectedInputDevice.value = devices[0];
+                }
+            }
             device.open(selectedInputDevice.value);
+            
+            // Initialize HUD components
+            if (HudComponentRegistry.micStatusComponent != null) {
+                HudComponentRegistry.micStatusComponent.setStatusData(usePushToTalk, isMuted, showMicStatus, keyPushToTalk, device);
+            }
+            if (HudComponentRegistry.waveformComponent != null) {
+                HudComponentRegistry.waveformComponent.setWaveformData(showWaveform, device);
+            }
+            
             System.out.println("ProxVC successfully started.");
         } catch (SocketException ex) {
             System.out.println("Failed to start the ProxVC client because of an exception.");
@@ -170,6 +213,17 @@ public class ProxVCClient implements ClientModInitializer {
                 }
             } else {
                 isMutePressed = false;
+            }
+            
+            if (keyOpenMenu.isPressed()) {
+                if (!isOpenMenuPressed) {
+                    isOpenMenuPressed = true;
+                    if (proxvcOptionsPage != null) {
+                        client.currentScreen = new ScreenOptions(client.currentScreen, proxvcOptionsPage);
+                    }
+                }
+            } else {
+                isOpenMenuPressed = false;
             }
         }
 

@@ -35,6 +35,9 @@ public class HudComponentStatus extends HudComponentMovable {
 
     @Override
     public boolean isVisible(Minecraft minecraft) {
+        if (showMicStatus == null) {
+            return false;
+        }
         return minecraft.gameSettings.immersiveMode.drawOverlays() && showMicStatus.value;
     }
 
