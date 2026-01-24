@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class ProxVCClient implements ClientModInitializer {
+    public static ProxVCClient instance;
     public Minecraft client;
     public DatagramSocket socket;
     public AudioInputDevice device;
@@ -55,6 +56,7 @@ public class ProxVCClient implements ClientModInitializer {
     public OptionBoolean isMuted;
     public OptionBoolean usePushToTalk;
     public OptionString selectedInputDevice;
+    public OptionEnum<fiveavian.proxvc.util.Waveforms.types> waveformType;
     public Option<?>[] options;
     public Path optionFilePath;
     private boolean isMutePressed = false;
@@ -74,13 +76,15 @@ public class ProxVCClient implements ClientModInitializer {
     }
 
     private void start(Minecraft client) {
+        instance = this;
         this.client = client;
         statusIconTexture = client.textureManager.loadTexture("/gui/proxvc.png");
         voiceChatVolume = new OptionFloat(client.gameSettings, "sound.voice_chat", 1.0f);
         isMuted = new OptionBoolean(client.gameSettings, "is_muted", false);
         usePushToTalk = new OptionBoolean(client.gameSettings, "use_push_to_talk", false);
         selectedInputDevice = new OptionString(client.gameSettings, "selected_input_device", null);
-        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice};
+        waveformType = new OptionEnum<>(client.gameSettings, "waveform_type", fiveavian.proxvc.util.Waveforms.types.class, fiveavian.proxvc.util.Waveforms.types.BASIC);
+        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice, waveformType};
         optionFilePath = FabricLoader.getInstance().getConfigDir().resolve("proxvc_client.properties");
         OptionStore.loadOptions(optionFilePath, options, keyBindings);
         OptionStore.saveOptions(optionFilePath, options, keyBindings);

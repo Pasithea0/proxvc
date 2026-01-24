@@ -14,6 +14,7 @@ public class AudioInputDevice implements AutoCloseable {
     private final IntBuffer ints = BufferUtils.createIntBuffer(1);
     private Long device = null;
     private boolean isTalking = false;
+    public int[] points = new int[20];
 
     public static String[] getSpecifiers() {
         List<String> result = null;
