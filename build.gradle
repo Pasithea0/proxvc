@@ -127,3 +127,34 @@ processResources {
 		expand "mod_version": project.mod_version
 	}
 }
+
+// Fix access widener namespace for noIntermediateMappings()
+// Loom remaps it to "intermediary" but runtime expects "official"
+tasks.named("remapJar").configure {
+	doLast {
+		def jarFile = file("${project.buildDir}/libs/${project.archivesBaseName}-${project.version}.jar")
+		if (jarFile.exists()) {
+			def tempDir = file("${project.buildDir}/tmp/accesswidener-fix")
+			tempDir.mkdirs()
+			
+			exec {
+				workingDir tempDir
+				commandLine "unzip", "-q", jarFile.absolutePath, "proxvc.accesswidener"
+			}
+			
+			def accessWidenerFile = file("${tempDir}/proxvc.accesswidener")
+			if (accessWidenerFile.exists()) {
+				def content = accessWidenerFile.text
+				content = content.replaceFirst(/^accessWidener\tv2\tintermediary/, "accessWidener\tv2\tofficial")
+				accessWidenerFile.text = content
+				
+				exec {
+					workingDir tempDir
+					commandLine "jar", "uf", jarFile.absolutePath, "proxvc.accesswidener"
+				}
+			}
+			
+			tempDir.deleteDir()
+		}
+	}
+}
