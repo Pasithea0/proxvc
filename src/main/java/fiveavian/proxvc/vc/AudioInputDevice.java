@@ -1,6 +1,5 @@
 package fiveavian.proxvc.vc;
 
-import fiveavian.proxvc.util.Waveforms;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.openal.*;
 
@@ -15,7 +14,6 @@ public class AudioInputDevice implements AutoCloseable {
     private final IntBuffer ints = BufferUtils.createIntBuffer(1);
     private Long device = null;
     private boolean isTalking = false;
-    public int[] points;
 
     public static String[] getSpecifiers() {
         List<String> result = null;
@@ -56,36 +54,23 @@ public class AudioInputDevice implements AutoCloseable {
             return null;
         }
         ints.rewind();
-        int is = ALC10.alcGetInteger(device, ALC11.ALC_CAPTURE_SAMPLES);
-        if (is < VCProtocol.SAMPLE_COUNT) {
+        ALC11.alcGetIntegerv(device, ALC11.ALC_CAPTURE_SAMPLES, ints);
+        if (ints.get(0) < VCProtocol.SAMPLE_COUNT) {
             return null;
         }
         samples.rewind();
         ALC11.alcCaptureSamples(device, samples, VCProtocol.SAMPLE_COUNT);
+        isTalking = !isSilent(samples);
         return samples;
     }
-    public synchronized void setTalk(boolean bool) {
-        isTalking = bool;
-    }
 
-        public synchronized boolean isTalking() {
+    public synchronized boolean isTalking() {
         if (isClosed()) {
             return false;
         }
         return isTalking;
     }
 
-    public void gatherInfo(boolean muted) {
-        if (muted) {
-            points = null;
-            isTalking = false;
-            return;
-        }
-        points = Waveforms.getWaveformPoints(samples, 20);
-        isTalking = !isSilent(samples);
-    }
-
-    // did not write this lolll
     private boolean isSilent(ByteBuffer samples) {
         if (samples.remaining() < 2) { // Assuming 16-bit samples (2 bytes)
             return true; // Not enough data to determine silence

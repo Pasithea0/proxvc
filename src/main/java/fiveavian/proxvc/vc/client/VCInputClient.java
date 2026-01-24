@@ -53,11 +53,7 @@ public class VCInputClient implements Runnable {
     }
 
     private void sendNextPacket() throws Exception {
-        if (sources.isEmpty()) {
-            device.gatherInfo(true);
-            return;
-        }
-        if (client.thePlayer == null) {
+        if (sources.isEmpty() || client.thePlayer == null) {
             return;
         }
         ByteBuffer samples = device.pollSamples();
@@ -70,9 +66,7 @@ public class VCInputClient implements Runnable {
             }
             ticksUntilNoopPacket = TICKS_UNTIL_NOOP_PACKET;
             samples = EMPTY_BUFFER;
-            device.gatherInfo(true);
         } else {
-            device.gatherInfo(false);
             ticksUntilNoopPacket = TICKS_UNTIL_NOOP_PACKET;
         }
         samples.rewind();

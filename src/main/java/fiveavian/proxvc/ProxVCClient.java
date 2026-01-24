@@ -1,15 +1,8 @@
 package fiveavian.proxvc;
 
 import fiveavian.proxvc.api.ClientEvents;
-import fiveavian.proxvc.gui.HudComponentStatus;
-import fiveavian.proxvc.gui.HudComponentWaveForm;
 import fiveavian.proxvc.gui.MicrophoneListComponent;
-import fiveavian.proxvc.gui.VolumeMixerComponent;
-import fiveavian.proxvc.util.EnvironmentDescriptor;
-import fiveavian.proxvc.util.MixerStore;
 import fiveavian.proxvc.util.OptionStore;
-import fiveavian.proxvc.util.Waveforms;
-import fiveavian.proxvc.vc.AttenuationProfile;
 import fiveavian.proxvc.vc.AudioInputDevice;
 import fiveavian.proxvc.vc.StreamingAudioSource;
 import fiveavian.proxvc.vc.client.VCInputClient;
@@ -17,25 +10,23 @@ import fiveavian.proxvc.vc.client.VCOutputClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.hud.component.HudComponents;
-import net.minecraft.client.gui.options.ScreenOptions;
 import net.minecraft.client.gui.options.components.*;
 import net.minecraft.client.gui.options.data.OptionsPage;
 import net.minecraft.client.gui.options.data.OptionsPages;
 import net.minecraft.client.input.InputDevice;
 import net.minecraft.client.option.*;
+import net.minecraft.client.render.tessellator.Tessellator;
 import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.render.texture.Texture;
 import net.minecraft.core.block.Blocks;
 import net.minecraft.core.entity.Entity;
 import net.minecraft.core.entity.player.Player;
-import net.minecraft.core.item.Item;
-import net.minecraft.core.item.Items;
 import net.minecraft.core.net.packet.PacketLogin;
 import net.minecraft.core.util.phys.Vec3;
-import org.apache.log4j.Logger;
+import net.minecraft.client.render.texture.Texture;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.AL11;
+import org.lwjgl.opengl.GL11;
 
 import java.net.DatagramSocket;
 import java.net.Socket;
@@ -47,12 +38,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/*
-#TODO Fix bug with output logic.
-*/
-
 public class ProxVCClient implements ClientModInitializer {
-    public static ProxVCClient instance;
     public Minecraft client;
     public DatagramSocket socket;
     public AudioInputDevice device;
@@ -63,27 +49,15 @@ public class ProxVCClient implements ClientModInitializer {
     public Texture statusIconTexture;
 
     public final KeyBinding keyMute = new KeyBinding("key.mute").setDefault(InputDevice.keyboard, Keyboard.KEY_M);
-    private boolean isMutePressed = false;
     public final KeyBinding keyPushToTalk = new KeyBinding("key.push_to_talk").setDefault(InputDevice.keyboard, Keyboard.KEY_V);
-    public final KeyBinding keyOpenMenu = new KeyBinding("key.open_menu").setDefault(InputDevice.keyboard, Keyboard.KEY_N);
-
-    public OptionsPage optionsPage;
-    public final KeyBinding[] keyBindings = {keyMute, keyPushToTalk, keyOpenMenu};
+    public final KeyBinding[] keyBindings = {keyMute, keyPushToTalk};
     public OptionFloat voiceChatVolume;
     public OptionBoolean isMuted;
     public OptionBoolean usePushToTalk;
-    public OptionBoolean showWaveform;
-    public OptionBoolean showMicStatus;
     public OptionString selectedInputDevice;
-    public OptionFloat muffleIntensity;
-    public OptionEnum<AttenuationProfile> attenuationProfile;
-    public OptionEnum<Waveforms.types> waveformType;
-
     public Option<?>[] options;
     public Path optionFilePath;
-    private boolean attenuationProfileChanged = false;
-
-    public EnvironmentDescriptor descriptor;
+    private boolean isMutePressed = false;
 
     public boolean isDisconnected() {
         return !client.isMultiplayerWorld() || serverAddress == null;
@@ -100,23 +74,13 @@ public class ProxVCClient implements ClientModInitializer {
     }
 
     private void start(Minecraft client) {
-        instance = this;
         this.client = client;
+        statusIconTexture = client.textureManager.loadTexture("/gui/proxvc.png");
         voiceChatVolume = new OptionFloat(client.gameSettings, "sound.voice_chat", 1.0f);
         isMuted = new OptionBoolean(client.gameSettings, "is_muted", false);
         usePushToTalk = new OptionBoolean(client.gameSettings, "use_push_to_talk", false);
-        showWaveform = new OptionBoolean(client.gameSettings, "show_waveform", true);
-        showMicStatus = new OptionBoolean(client.gameSettings, "show_mic_status", true);
         selectedInputDevice = new OptionString(client.gameSettings, "selected_input_device", null);
-        muffleIntensity = new OptionFloat(client.gameSettings, "muffle_intensity", 1f);
-        attenuationProfile = new OptionEnum<>(client.gameSettings, "attenuation_profile", AttenuationProfile.class, AttenuationProfile.VOICE_CLARITY);
-        attenuationProfile.addCallback(value -> {
-            attenuationProfileChanged = true;
-        });
-        waveformType = new OptionEnum<>(client.gameSettings, "waveform_type", Waveforms.types.class, Waveforms.types.BASIC);
-
-
-        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice, muffleIntensity, showWaveform, showMicStatus, attenuationProfile,waveformType};
+        options = new Option[]{voiceChatVolume, isMuted, usePushToTalk, selectedInputDevice};
         optionFilePath = FabricLoader.getInstance().getConfigDir().resolve("proxvc_client.properties");
         OptionStore.loadOptions(optionFilePath, options, keyBindings);
         OptionStore.saveOptions(optionFilePath, options, keyBindings);
@@ -129,42 +93,20 @@ public class ProxVCClient implements ClientModInitializer {
             inputThread.start();
             outputThread.start();
 
-            OptionsCategory generalCategory = new OptionsCategory("gui.options.page.proxvc.category.general", Items.RECORD_CAT.getDefaultStack())
+            OptionsCategory generalCategory = new OptionsCategory("gui.options.page.proxvc.category.general")
                     .withComponent(new FloatOptionComponent(voiceChatVolume))
-                    .withComponent(new ToggleableOptionComponent<>(attenuationProfile))
                     .withComponent(new BooleanOptionComponent(isMuted))
                     .withComponent(new BooleanOptionComponent(usePushToTalk));
-            OptionsCategory devicesCategory = new OptionsCategory("gui.options.page.proxvc.category.devices", Items.REPEATER.getDefaultStack())
+            OptionsCategory devicesCategory = new OptionsCategory("gui.options.page.proxvc.category.devices")
                     .withComponent(new MicrophoneListComponent(device, selectedInputDevice));
-            OptionsCategory controlsCategory = new OptionsCategory("gui.options.page.proxvc.category.controls",Items.AMMO_ARROW.getDefaultStack())
+            OptionsCategory controlsCategory = new OptionsCategory("gui.options.page.proxvc.category.controls")
                     .withComponent(new KeyBindingComponent(keyMute))
-                    .withComponent(new KeyBindingComponent(keyPushToTalk))
-                    .withComponent(new KeyBindingComponent(keyOpenMenu));
-            OptionsCategory hudCategory = new OptionsCategory("gui.options.page.proxvc.category.hud", Blocks.GLASS.getDefaultStack())
-                    .withComponent(new ToggleableOptionComponent<>(waveformType))
-                    .withComponent(new BooleanOptionComponent(showWaveform))
-                    .withComponent(new BooleanOptionComponent(showMicStatus));
-            OptionsCategory mixerCategory = new OptionsCategory("gui.options.page.proxvc.category.mixer", Items.DUST_REDSTONE.getDefaultStack())
-                    .withComponent(new VolumeMixerComponent(sources));
-            mixerCategory.collapsed = true;
-            OptionsCategory effectsCategory = new OptionsCategory("gui.options.page.proxvc.category.effects",Items.AMMO_FIREBALL.getDefaultStack())
-                    .withComponent(new FloatOptionComponent(muffleIntensity));
-
-            optionsPage = OptionsPages.register(new OptionsPage("gui.options.page.proxvc.title", Blocks.NOTEBLOCK.getDefaultStack()))
+                    .withComponent(new KeyBindingComponent(keyPushToTalk));
+            OptionsPages.register(new OptionsPage("gui.options.page.proxvc.title", Blocks.NOTEBLOCK.getDefaultStack()))
                     .withComponent(generalCategory)
-                    .withComponent(mixerCategory)
                     .withComponent(devicesCategory)
-                    .withComponent(controlsCategory)
-                    .withComponent(effectsCategory)
-                    .withComponent(hudCategory);
-            ((HudComponentStatus) HudComponents.INSTANCE.getComponent("mic_status"))
-                    .setStatusData(usePushToTalk, isMuted, showMicStatus, keyPushToTalk, device);
-            ((HudComponentWaveForm) HudComponents.INSTANCE.getComponent("waveform"))
-                    .setWaveformData(showWaveform, device);
-
+                    .withComponent(controlsCategory);
             device.open(selectedInputDevice.value);
-            MixerStore.load();
-            descriptor = new EnvironmentDescriptor(client, sources);
             System.out.println("ProxVC successfully started.");
         } catch (SocketException ex) {
             System.out.println("Failed to start the ProxVC client because of an exception.");
@@ -189,7 +131,6 @@ public class ProxVCClient implements ClientModInitializer {
             if (device != null) {
                 device.close();
             }
-            MixerStore.save();
         } catch (InterruptedException ex) {
             System.out.println("Failed to stop the ProxVC client because of an exception.");
             ex.printStackTrace();
@@ -197,8 +138,6 @@ public class ProxVCClient implements ClientModInitializer {
     }
 
     private void tick(Minecraft client) {
-
-
         if (isDisconnected())
             return;
 
@@ -211,15 +150,11 @@ public class ProxVCClient implements ClientModInitializer {
             }
         }
         for (int entityId : toRemove) {
-            sources.get(entityId).close();
-            sources.remove(entityId);
+            sources.remove(entityId).close();
         }
         for (int entityId : toAdd) {
             if (!sources.containsKey(entityId)) {
-                StreamingAudioSource source = new StreamingAudioSource();
-                source.volume = MixerStore.getMixerProperty(entityId);
-                source.setAttenuationProfile(attenuationProfile.value);
-                sources.put(entityId, source);
+                sources.put(entityId, new StreamingAudioSource());
             }
         }
 
@@ -233,35 +168,45 @@ public class ProxVCClient implements ClientModInitializer {
                 isMutePressed = false;
             }
         }
-        if (keyOpenMenu.isPressed() && client.currentScreen == null) {
-            client.displayScreen(new ScreenOptions(null, optionsPage));
-        }
 
         for (Entity entity : client.currentWorld.loadedEntityList) {
             StreamingAudioSource source = sources.get(entity.id);
             if (source == null) {
                 continue;
             }
-            source.efx.calculateMuffleIntensity(client, (Player) entity, muffleIntensity.value);
-
-            Vec3 headPos = ((Player) entity).getPosition(client.timer.partialTicks, true);
             Vec3 look = entity.getLookAngle();
+            AL10.alDistanceModel(AL11.AL_LINEAR_DISTANCE);
+            AL10.alSourcef(source.source, AL10.AL_MAX_DISTANCE, 32f);
+            AL10.alSourcef(source.source, AL10.AL_REFERENCE_DISTANCE, 16f);
             AL10.alSource3f(source.source, AL10.AL_POSITION, (float) entity.x, (float) entity.y, (float) entity.z);
             AL10.alSource3f(source.source, AL10.AL_DIRECTION, (float) look.x, (float) look.y, (float) look.z);
             AL10.alSource3f(source.source, AL10.AL_VELOCITY, (float) entity.xd, (float) entity.yd, (float) entity.zd);
-            AL10.alSourcef(source.source, AL10.AL_GAIN, voiceChatVolume.value * source.volume);
-            if (attenuationProfileChanged) {
-                source.setAttenuationProfile(attenuationProfile.value);
-            }
-        }
-        if (attenuationProfileChanged) {
-            attenuationProfileChanged = false;
+            AL10.alSourcef(source.source, AL10.AL_GAIN, voiceChatVolume.value);
         }
     }
 
     private void render(Minecraft client, WorldRenderer renderer) {
-
-
+        if (isDisconnected() || !client.gameSettings.immersiveMode.drawOverlays()) {
+            return;
+        }
+        statusIconTexture.bind();
+        GL11.glColor4d(1.0, 1.0, 1.0, 1.0);
+        double u = 0.0;
+        if (isMuted.value) {
+            u = 0.2;
+        } else if (device.isClosed()) {
+            u = 0.4;
+        } else if (usePushToTalk.value && !keyPushToTalk.isPressed()) {
+            u = 0.6;
+        } else if (device.isClosed()) {
+            u = 0.2;
+        } else if (device.isTalking()) {
+            u = 0.8;
+        }
+        Tessellator.instance.startDrawingQuads();
+        Tessellator.instance.setColorRGBA_F(1f, 1f, 1f, 0.5f);
+        Tessellator.instance.drawRectangleWithUV(4, client.resolution.getScaledHeightScreenCoords() - 24 - 4, 24, 24, u, 0.0, 0.20, 1.0);
+        Tessellator.instance.draw();
     }
 
     private void login(Minecraft client, PacketLogin packet) {
