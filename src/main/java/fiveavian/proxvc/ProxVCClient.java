@@ -249,7 +249,7 @@ public class ProxVCClient implements ClientModInitializer {
             AL10.alSource3f(source.source, AL10.AL_POSITION, (float) entity.x, (float) entity.y, (float) entity.z);
             AL10.alSource3f(source.source, AL10.AL_DIRECTION, (float) look.x, (float) look.y, (float) look.z);
             AL10.alSource3f(source.source, AL10.AL_VELOCITY, (float) entity.xd, (float) entity.yd, (float) entity.zd);
-            AL10.alSourcef(source.source, AL10.AL_GAIN, voiceChatVolume.value * source.volume);
+            //AL10.alSourcef(source.source, AL10.AL_GAIN, voiceChatVolume.value * source.volume );
             if (attenuationProfileChanged) {
                 source.setAttenuationProfile(attenuationProfile.value);
             }

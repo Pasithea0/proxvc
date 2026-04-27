@@ -51,6 +51,17 @@ public class StreamingAudioSource implements AutoCloseable {
         if (numBuffersAvailable == 0) {
             return;
         }
+
+        if (volume != 1.0f) {
+            //amplify samples
+
+            for (int i = 0; i < samples.remaining(); i += 2) {
+                short sample = samples.getShort(samples.position() + i);
+                sample = (short) Math.max(Math.min(sample * volume, Short.MAX_VALUE), Short.MIN_VALUE);
+                samples.putShort(samples.position() + i, sample);
+            }
+        }
+
         AL10.alBufferData(buffers.get(bufferIndex), AL10.AL_FORMAT_MONO16, samples, VCProtocol.SAMPLE_RATE);
         AL10.alSourceQueueBuffers(source, buffers.get(bufferIndex));
         //save copt
