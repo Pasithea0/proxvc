@@ -133,12 +133,10 @@ public class EFX implements AutoCloseable {
         // Shoot rays in 16 directions from the player and the source to get description of the room
 
         RoomDescription roomDescription = calculateRoomDescription(client, entity);
-        float averageDistance = roomDescription.averageDistance;
         int numRays = roomDescription.numRays;
         int escapedRays = roomDescription.escapedRays;
 
         RoomDescription roomDescriptionFromEars = calculateRoomDescription(client, client.thePlayer);
-        float averageDistanceFromEars = roomDescriptionFromEars.averageDistance;
         int numRaysFromEars = roomDescriptionFromEars.numRays;
         int escapedRaysFromEars = roomDescriptionFromEars.escapedRays;
 
@@ -202,7 +200,6 @@ public class EFX implements AutoCloseable {
         float totalDistance = 0f;
         int escapedRays = 0;
         int numRays = 0;
-        int escapedMouthRays = 0;
 
 
         for (Vec3 dir : directions) {
@@ -223,9 +220,6 @@ public class EFX implements AutoCloseable {
             } else {
 
                 escapedRays++;
-                if (normalizedDir.dotProduct(entity.getLookAngle()) >= 0.5f) {
-                    escapedMouthRays++;
-                }
             }
 
         }
@@ -263,4 +257,3 @@ public class EFX implements AutoCloseable {
         }
     }
 }
-
