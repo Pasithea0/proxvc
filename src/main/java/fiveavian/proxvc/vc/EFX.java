@@ -213,7 +213,7 @@ public class EFX implements AutoCloseable {
                 block = client.currentWorld.getBlock(hit.x, hit.y, hit.z);
             }
 
-            if (block != null && (block.getMaterial().isSolid() || block.getMaterial().isLiquid())) {
+            if (hit != null && block != null && (block.getMaterial().isSolid() || block.getMaterial().isLiquid())) {
                 float distance = (float) hit.location.distanceTo(pos);
                 totalDistance += distance;
                 numRays++;
